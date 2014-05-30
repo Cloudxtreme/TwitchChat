@@ -31,15 +31,14 @@ namespace TwitchChat
         bool m_playSounds, m_confirmTimeouts, m_confirmBans, m_highlightQuestions, m_showIcons, m_onTop, m_showTimestamp;
         int m_fontSize;
         Visibility m_modButtonVisible = Visibility.Collapsed;
-        Thread m_thread;
         ChatOptions m_options;
-        TwitchConnection m_twitch;
         TwitchChannel m_channel;
         string m_channelName;
         bool m_modListRequested;
 
+        object m_sync = new object();
+
         public event PropertyChangedEventHandler PropertyChanged;
-        bool m_reconnect;
         string m_cache;
 
         SoundPlayer m_subSound = new SoundPlayer(Properties.Resources.Subscriber);
@@ -63,10 +62,14 @@ namespace TwitchChat
             m_fontSize = 14;
             OnTop = m_options.GetOption("OnTop", false);
             m_channelName = m_options.Stream.ToLower();
+
+
             LoadAsyncData();
 
-            m_thread = new Thread(ThreadProc);
-            m_thread.Start();
+            DispatcherTimer dispatcherTimer = new DispatcherTimer();
+            dispatcherTimer.Tick += new EventHandler(dispatcherTimer_Tick);
+            dispatcherTimer.Interval = new TimeSpan(0, 2, 0);
+            dispatcherTimer.Start();
 
             Messages = new ObservableCollection<ChatItem>();
 
@@ -77,6 +80,8 @@ namespace TwitchChat
 
         async void LoadAsyncData()
         {
+            var connectTask = Connect(m_channelName);
+
             string path = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
             m_cache = System.IO.Path.Combine(path, "TwitchChat");
 
@@ -84,6 +89,7 @@ namespace TwitchChat
             GetChannelData();
 
             Emoticons = await task;
+            m_channel = await connectTask;
         }
 
         void CurrentDomain_UnhandledException(object sender, UnhandledExceptionEventArgs e)
@@ -145,129 +151,169 @@ namespace TwitchChat
             return false;
         }
 
-        public void ThreadProc()
-        {
-            m_twitch = new TwitchConnection();
+        bool m_pinged = false;
 
-            if (!Connect())
+        private void dispatcherTimer_Tick(object sender, EventArgs e)
+        {
+            var channel = m_channel;
+            var twitch = GetConnection();
+
+            if (twitch == null)
                 return;
 
-            const int pingDelay = 120;
-            DateTime lastPing = DateTime.UtcNow;
-            while (true)
+            // this timer runs every two minutes
+            if (twitch.LastEvent.Elapsed().TotalSeconds >= 90)
             {
-                Thread.Sleep(1000);
-
-                var lastEvent = m_twitch.LastEvent;
-                if (lastEvent.Elapsed().TotalSeconds >= pingDelay && lastPing.Elapsed().TotalSeconds >= pingDelay)
+                if (!m_pinged)
                 {
-                    m_twitch.Ping();
-                    lastPing = DateTime.UtcNow;
+                    twitch.Ping();
+                    m_pinged = true;
                 }
-
-                if (m_lastViewerCheck.Elapsed().TotalMinutes >= 2)
-                    GetChannelData();
-
-                if (lastEvent.Elapsed().TotalMinutes >= 1)
+                else
                 {
-                    Log.Instance.BeginReconnect();
+                    Log.Instance.Disconnected();
                     WriteStatus("Disconnected!");
+                    Reconnect(m_channelName);
 
-                    m_twitch.Quit();
-
-                    if (!Connect())
-                        return;
-
-                    Log.Instance.EndReconnect();
-                }
-                else if (m_reconnect)
-                {
-                    m_reconnect = false;
-                    if (!Connect())
-                        return;
+                    m_pinged = false;
                 }
             }
+            else
+            {
+                m_pinged = false;
+            }
+
+            GetChannelData();
+        }
+
+        private TwitchConnection GetConnection()
+        {
+            return (m_channel != null ? m_channel.Connection : null);
+        }
+
+        private async void Reconnect(string channelName)
+        {
+            Disconnect();
+            m_channel = await Connect(channelName);
+        }
+
+        void Disconnect()
+        {
+            TwitchConnection twitch = LeaveChannel();
+            if (twitch != null)
+                twitch.Quit();
+        }
+
+        async void ChangeChannel(string newChannel)
+        {
+            var twitch = LeaveChannel();
+            if (twitch == null)
+                m_channel = await Connect(newChannel);
+            else
+                m_channel = JoinChannel(twitch, newChannel);
         }
 
 
-        bool Connect()
+        async Task<TwitchChannel> Connect(string channelName)
         {
-            if (m_channel != null)
-            {
-                m_channel.Leave();
+            Debug.Assert(m_channel == null);
 
-                m_channel.ModeratorJoined -= ModJoined;
-                m_channel.UserChatCleared -= ClearChatHandler;
-                m_channel.MessageReceived -= ChatMessageReceived;
-                m_channel.MessageSent -= ChatMessageReceived;
-                m_channel.StatusMessageReceived -= JtvMessageReceived;
-                m_channel.ActionReceived -= ChatActionReceived;
-                m_channel.UserSubscribed -= SubscribeHandler;
-            }
-            
-            if (m_twitch != null)
+            var twitch = new TwitchConnection();
+            var connection = twitch.ConnectAsync(m_options.User, m_options.Pass);
+
+            var channel = JoinChannel(twitch, channelName);
+
+            var result = await connection;
+            if (result == ConnectResult.LoginFailed)
             {
-                m_twitch.Quit();
+                WriteStatus("Failed to login, please change options.ini and restart the application.");
+                return null;
             }
 
-
-
-            m_twitch = new TwitchConnection();
-            m_channel = m_twitch.Create(m_channelName);
-
-            m_channel.ModeratorJoined += ModJoined;
-            m_channel.UserChatCleared += ClearChatHandler;
-            m_channel.MessageReceived += ChatMessageReceived;
-            m_channel.MessageSent += ChatMessageReceived;
-            m_channel.StatusMessageReceived += JtvMessageReceived;
-            m_channel.ActionReceived += ChatActionReceived;
-            m_channel.UserSubscribed += SubscribeHandler;
-
-            var currUser = CurrentUser = m_channel.GetUser(m_options.User);
-
-            if (currUser.IsModerator)
-                ModJoined(m_channel, currUser);
-            else
-                ModLeft(m_channel, currUser);
-            
-            bool first = true;
-            ConnectResult result;
-            const int sleepTime = 5000;
-            do
+            while (result != ConnectResult.Connected)
             {
-                if (!NativeMethods.IsConnectedToInternet())
-                {
-                    WriteStatus("Not connected to the internet.");
-
-                    do
-                    {
-                        Thread.Sleep(sleepTime);
-                    } while (!NativeMethods.IsConnectedToInternet());
-
-                    WriteStatus("Re-connected to the internet.");
-                }
-
-                if (!first)
-                    Thread.Sleep(sleepTime);
-
-                first = false;
-                result = m_twitch.Connect(m_options.User, m_options.Pass);
-
                 if (result == ConnectResult.LoginFailed)
                 {
                     WriteStatus("Failed to login, please change options.ini and restart the application.");
-                    return false;
+                    return null;
                 }
-                else if (result != ConnectResult.Connected)
+                else if (result == ConnectResult.NetworkError)
                 {
-                    WriteStatus("Failed to connect: {0}", result == ConnectResult.NetworkError ? "network error" : "failed");
-                }
-            } while (result != ConnectResult.Connected);
+                    if (!NativeMethods.IsConnectedToInternet())
+                    {
+                        WriteStatus("Not connected to the internet.");
+                        do
+                        {
+                            await Task.Delay(5000);
+                        } while (!NativeMethods.IsConnectedToInternet());
 
-            m_channel.Join();
-            WriteStatus("Connected to channel {0}.", m_channel.Name);
-            return true;
+                        WriteStatus("Re-connected to the internet.");
+                    }
+                    else
+                    {
+                        WriteStatus("Failed to connect: network error");
+                    }
+                }
+
+                await Task.Delay(5000);
+                result = await twitch.ConnectAsync(m_options.User, m_options.Pass);
+            }
+
+            await channel.JoinAsync();
+            WriteStatus("Connected to channel {0}.", channel.Name);
+            return channel;
         }
+
+        private TwitchChannel JoinChannel(TwitchConnection twitch, string name)
+        {
+            var channel = twitch.Create(name);
+
+            channel.ModeratorJoined += ModJoined;
+            channel.UserChatCleared += ClearChatHandler;
+            channel.MessageReceived += ChatMessageReceived;
+            channel.MessageSent += ChatMessageReceived;
+            channel.StatusMessageReceived += JtvMessageReceived;
+            channel.ActionReceived += ChatActionReceived;
+            channel.UserSubscribed += SubscribeHandler;
+
+            // Setting initial state, it's ok we haven't joined the channel yet.
+            var currUser = CurrentUser = channel.GetUser(m_options.User);
+            if (currUser.IsModerator)
+                ModJoined(channel, currUser);
+            else
+                ModLeft(channel, currUser);
+            return channel;
+        }
+
+
+        TwitchConnection LeaveChannel()
+        {
+            var channel = m_channel;
+            if (channel == null)
+                return null;
+
+            lock (m_sync)
+            {
+                if (m_channel == null)
+                    return null;
+
+                channel = m_channel;
+                m_channel = null;
+            }
+
+
+            channel.Leave();
+
+            channel.ModeratorJoined -= ModJoined;
+            channel.UserChatCleared -= ClearChatHandler;
+            channel.MessageReceived -= ChatMessageReceived;
+            channel.MessageSent -= ChatMessageReceived;
+            channel.StatusMessageReceived -= JtvMessageReceived;
+            channel.ActionReceived -= ChatActionReceived;
+            channel.UserSubscribed -= SubscribeHandler;
+            return channel.Connection;
+        }
+
 
 
         #region Event Handlers
@@ -595,14 +641,14 @@ namespace TwitchChat
         #region Event Handlers
         private void Window_Closed(object sender, EventArgs e)
         {
-            m_twitch.Quit();
+            Disconnect();
             Application.Current.Shutdown();
             Environment.Exit(0);
         }
 
         private void OnReconnect(object sender, RoutedEventArgs e)
         {
-            m_reconnect = true;
+            Reconnect(m_channelName);
         }
 
         private void OnClear(object sender, RoutedEventArgs e)

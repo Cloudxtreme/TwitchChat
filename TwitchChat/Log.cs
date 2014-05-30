@@ -16,7 +16,7 @@ namespace TwitchChat
 
 
 
-        internal void BeginReconnect()
+        internal void Disconnected()
         {
             throw new NotImplementedException();
         }
