@@ -1,6 +1,7 @@
 ﻿using Newtonsoft.Json;
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Net;
@@ -19,11 +20,12 @@ namespace TwitchChat
         public int Width { get; private set; }
         public int Height { get; private set; }
         public string Url { get; private set; }
-        public string LocalFile { get; private set; }
+        public string LocalFile { get; internal set; }
         public EmoticonSet ImageSet { get; private set; }
 
         public Emoticon(EmoticonSet set, string regex, JsonImage data)
         {
+
             Regex = regex;
             Width = data.width ?? -1;
             Height = data.height ?? -1;
@@ -41,37 +43,65 @@ namespace TwitchChat
                 {
                 }
             }
+
+            string localPath = GetLocalPath(set.Cache);
+            if (File.Exists(localPath))
+                LocalFile = localPath;
         }
 
-        public async Task Download(string cache)
+        public async Task Download()
         {
-            string localFilePath = GetLocalPath(cache);
+            string localFilePath = GetLocalPath(ImageSet.Cache);
             if (File.Exists(localFilePath))
                 LocalFile = localFilePath;
 
+            await Download(localFilePath);
+            
+            /*
+
+            string localFilePath = GetLocalPath(ImageSet.Cache);
             var client = new WebClient();
             var result = new TaskCompletionSource<string>();
             client.DownloadFileCompleted += (sender, e) =>
             {
                 if (e.Error != null)
-                    result.SetResult(LocalFile);
+                    result.SetResult(localFilePath);
                 else
                     result.SetResult(null);
             };
             
             client.DownloadFileAsync(new Uri(Url), localFilePath);
+             
             LocalFile = await result.Task;
+             */
+        }
+        internal async void ForceRedownload()
+        {
+            LocalFile = null;
+            string localFilePath = GetLocalPath(ImageSet.Cache);
+            await Download(localFilePath);
+        }
+
+        private async Task Download(string localFilePath)
+        {
+            var request = (HttpWebRequest)HttpWebRequest.Create(new Uri(Url));
+            var response = await Task<WebResponse>.Factory.FromAsync(request.BeginGetResponse, request.EndGetResponse, null);
+
+            string directory = Path.GetDirectoryName(localFilePath);
+            if (!Directory.Exists(directory))
+                Directory.CreateDirectory(directory);
+
+            using (FileStream fs = new FileStream(localFilePath, FileMode.OpenOrCreate, FileAccess.ReadWrite))
+            {
+                await response.GetResponseStream().CopyToAsync(fs);
+                LocalFile = localFilePath;
+            }
         }
 
         private string GetLocalPath(string cache)
         {
             int id = ImageSet.Id;
-
-            string directory = Path.Combine(cache, "emotes", id != -1 ? id.ToString() : "default");
-            if (!Directory.Exists(directory))
-                Directory.CreateDirectory(directory);
-
-            return Path.Combine(directory, GetUrlFilename());
+            return Path.Combine(cache, "emotes", id != -1 ? id.ToString() : "default", GetUrlFilename());
         }
 
         
@@ -106,33 +136,51 @@ namespace TwitchChat
                 }
             }
         }
+
     }
 
     class EmoticonSet
     {
+        EmoticonData m_data;
         Task m_task;
         List<Emoticon> m_emoticons = new List<Emoticon>();
         public int Id { get; private set; }
 
+        public string Cache { get { return m_data.Cache; } }
 
-        public async Task DownloadAll(string cache)
+        public EmoticonSet(EmoticonData data, int id)
         {
-            await GetDownloadTask(cache);
+            m_data = data;
+            Id = id;
         }
 
-        Task GetDownloadTask(string cache)
+        public async Task DownloadAll()
+        {
+            var task = m_task;
+            if (task != null)
+            {
+                await task;
+                return;
+            }
+
+            lock (this)
+                if (m_task == null)
+                    m_task = GetDownloadTask();
+
+            await m_task; 
+        }
+
+        Task GetDownloadTask()
         {
             var task = m_task;
             if (task != null)
                 return task;
 
+            Task[] tasks;
             lock (m_emoticons)
-            {
-                var tasks = (from emote in m_emoticons select emote.Download(cache)).ToArray();
-                task = Task.WhenAll(tasks);
-            }
+                tasks = (from emote in m_emoticons select emote.Download()).ToArray();
 
-            return task;
+            return Task.WhenAll(tasks);
         }
 
         internal void Add(Emoticon e)
@@ -150,14 +198,18 @@ namespace TwitchChat
 
     class EmoticonData
     {
-        EmoticonSet m_defaultSet = new EmoticonSet();
+        EmoticonSet m_defaultSet;
         List<EmoticonSet> m_sets = new List<EmoticonSet>();
-        private TwitchEmoticonResponse emotes;
+
+        public string Cache { get; set; }
 
         public EmoticonSet DefaultEmoticons { get { return m_defaultSet; } }
 
-        public EmoticonData(TwitchEmoticonResponse emotes)
+        public EmoticonData(TwitchEmoticonResponse emotes, string cache)
         {
+            m_defaultSet = new EmoticonSet(this, -1);
+            Cache = cache;
+
             foreach (var emote in emotes.emoticons)
             {
                 foreach (var img in emote.images)
@@ -168,17 +220,17 @@ namespace TwitchChat
             }
         }
 
-        public async void EnsureDownloaded(int[] sets, string cache)
+        public async void EnsureDownloaded(int[] sets)
         {
             if (sets == null)
                 return;
 
-            Task defaultTask = m_defaultSet.DownloadAll(cache);
+            Task defaultTask = m_defaultSet.DownloadAll();
 
             var tasks = (from i in sets
                          let set = GetEmoticonSet(i)
                          where set != null
-                         select set.DownloadAll(cache)).ToArray();
+                         select set.DownloadAll()).ToArray();
 
             await defaultTask;
             await Task.WhenAll(tasks);
@@ -215,7 +267,7 @@ namespace TwitchChat
 
             var set = m_sets[i];
             if (set == null)
-                set = m_sets[i] = new EmoticonSet();
+                set = m_sets[i] = new EmoticonSet(this, i);
 
             return set;
         }
@@ -322,8 +374,8 @@ namespace TwitchChat
                     await Task.Delay(30000);
             }
 
-            var data = new EmoticonData(emotes);
-            data.DefaultEmoticons.DownloadAll(cache);
+            var data = new EmoticonData(emotes, cache);
+            data.DefaultEmoticons.DownloadAll();
 
             return data;
         }

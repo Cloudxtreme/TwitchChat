@@ -152,7 +152,7 @@ namespace TwitchChat
             if (!Connect())
                 return;
 
-            const int pingDelay = 20;
+            const int pingDelay = 120;
             DateTime lastPing = DateTime.UtcNow;
             while (true)
             {
@@ -199,6 +199,7 @@ namespace TwitchChat
                 m_channel.ModeratorJoined -= ModJoined;
                 m_channel.UserChatCleared -= ClearChatHandler;
                 m_channel.MessageReceived -= ChatMessageReceived;
+                m_channel.MessageSent -= ChatMessageReceived;
                 m_channel.StatusMessageReceived -= JtvMessageReceived;
                 m_channel.ActionReceived -= ChatActionReceived;
                 m_channel.UserSubscribed -= SubscribeHandler;
@@ -217,6 +218,7 @@ namespace TwitchChat
             m_channel.ModeratorJoined += ModJoined;
             m_channel.UserChatCleared += ClearChatHandler;
             m_channel.MessageReceived += ChatMessageReceived;
+            m_channel.MessageSent += ChatMessageReceived;
             m_channel.StatusMessageReceived += JtvMessageReceived;
             m_channel.ActionReceived += ChatActionReceived;
             m_channel.UserSubscribed += SubscribeHandler;
@@ -284,7 +286,7 @@ namespace TwitchChat
 
             var emotes = Emoticons;
             if (emotes != null)
-                emotes.EnsureDownloaded(user.ImageSet, m_cache);
+                emotes.EnsureDownloaded(user.ImageSet);
             Dispatcher.BeginInvoke(DispatcherPriority.Normal, new Action<ChatItem>(AddItem), new ChatAction(this, user, text));
         }
 
@@ -309,7 +311,7 @@ namespace TwitchChat
 
             var emotes = Emoticons;
             if (emotes != null)
-                emotes.EnsureDownloaded(user.ImageSet, m_cache);
+                emotes.EnsureDownloaded(user.ImageSet);
 
             bool question = false;
             if (HighlightQuestions)
@@ -336,7 +338,8 @@ namespace TwitchChat
             if (data != null)
                 text = data.CurrentViewerCount.ToString() + " viewers";
 
-            await Dispatcher.BeginInvoke(DispatcherPriority.Normal, new Action<string>(SetViewers), text);
+            // Don't wait task, just fire and forget.
+            var task = Dispatcher.BeginInvoke(DispatcherPriority.Normal, new Action<string>(SetViewers), text);
         }
 
         private void SetViewers(string value)
@@ -767,8 +770,6 @@ namespace TwitchChat
             text = text.Replace('\n', ' ');
 
             m_channel.SendMessage(text);
-            var user = m_channel.GetUser(m_options.User);
-            AddItem(new ChatMessage(this, ItemType.Message, user, text));
         }
 
         private void HandleCommand(string text)

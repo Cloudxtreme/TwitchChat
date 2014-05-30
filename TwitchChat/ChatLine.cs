@@ -382,7 +382,10 @@ namespace TwitchChat
                 {
                     try
                     {
-                        File.Delete(emote.LocalFile);
+                        var local = emote.LocalFile;
+                        emote.LocalFile = local;
+                        File.Delete(local);
+                        emote.ForceRedownload();
                     }
                     catch
                     {
@@ -394,10 +397,10 @@ namespace TwitchChat
 
             Image img = new Image();
             img.Source = src;
-            if (emote.Height != null)
+            if (emote.Height != -1)
                 img.Height = (int)emote.Height;
 
-            if (emote.Width != null)
+            if (emote.Width != -1)
                 img.Width = (int)emote.Width;
 
             img.Stretch = Stretch.Uniform;
