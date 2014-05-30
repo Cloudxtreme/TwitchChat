@@ -1,9 +1,9 @@
-﻿using System;
+﻿using DarkAutumn.Twitch;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
-using Winter;
 
 namespace TwitchChat
 {
@@ -18,7 +18,6 @@ namespace TwitchChat
 
     public abstract class ChatItem
     {
-        public DateTime Time { get; private set; }
 
         public MainWindow Controller { get; private set; }
 
@@ -32,7 +31,6 @@ namespace TwitchChat
         {
             Controller = controller;
             Type = type;
-            Time = DateTime.Now;
         }
 
         public void ClearChat()

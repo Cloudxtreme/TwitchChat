@@ -19,8 +19,7 @@ using System.Windows.Media.Imaging;
 using System.Windows.Navigation;
 using System.Windows.Shapes;
 using System.Windows.Threading;
-using Winter;
-using WinterBotLogging;
+using DarkAutumn.Twitch;
 
 namespace TwitchChat
 {
@@ -34,15 +33,20 @@ namespace TwitchChat
         Visibility m_modButtonVisible = Visibility.Collapsed;
         Thread m_thread;
         ChatOptions m_options;
-        TwitchClient m_twitch;
-        TwitchUsers m_users;
-        string m_channel;
+        TwitchConnection m_twitch;
+        TwitchChannel m_channel;
+        string m_channelName;
         bool m_modListRequested;
 
         public event PropertyChangedEventHandler PropertyChanged;
         bool m_reconnect;
+        string m_cache;
 
         SoundPlayer m_subSound = new SoundPlayer(Properties.Resources.Subscriber);
+
+        DateTime m_lastViewerCheck = DateTime.MinValue;
+
+        internal static EmoticonData Emoticons { get; private set; }
         
         public MainWindow()
         {
@@ -58,9 +62,8 @@ namespace TwitchChat
             m_showTimestamp = m_options.GetOption("ShowTimestamps", false);
             m_fontSize = 14;
             OnTop = m_options.GetOption("OnTop", false);
-            m_channel = m_options.Stream.ToLower();
-            TwitchHttp.Instance.PollChannelData(m_channel);
-            TwitchHttp.Instance.ChannelDataReceived += Instance_ChannelDataReceived;
+            m_channelName = m_options.Stream.ToLower();
+            LoadAsyncData();
 
             m_thread = new Thread(ThreadProc);
             m_thread.Start();
@@ -68,8 +71,19 @@ namespace TwitchChat
             Messages = new ObservableCollection<ChatItem>();
 
             InitializeComponent();
-            Channel.Text = m_channel;
+            Channel.Text = m_channelName;
             ChatInput.Focus();
+        }
+
+        async void LoadAsyncData()
+        {
+            string path = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
+            m_cache = System.IO.Path.Combine(path, "TwitchChat");
+
+            var task = TwitchApi.GetEmoticonData(m_cache);
+            GetChannelData();
+
+            Emoticons = await task;
         }
 
         void CurrentDomain_UnhandledException(object sender, UnhandledExceptionEventArgs e)
@@ -95,7 +109,7 @@ namespace TwitchChat
 
         public void Unban(TwitchUser user)
         {
-            m_twitch.Unban(user.Name);
+            m_channel.Unban(user);
         }
 
         public bool Ban(TwitchUser user)
@@ -106,7 +120,7 @@ namespace TwitchChat
 
             if (res == MessageBoxResult.Yes)
             {
-                m_twitch.Ban(user.Name);
+                m_channel.Ban(user);
                 return true;
             }
 
@@ -124,7 +138,7 @@ namespace TwitchChat
 
             if (res == MessageBoxResult.Yes)
             {
-                m_twitch.Timeout(user.Name, duration);
+                m_channel.Timeout(user, duration);
                 return true;
             }
 
@@ -133,13 +147,13 @@ namespace TwitchChat
 
         public void ThreadProc()
         {
-            m_twitch = new TwitchClient();
+            m_twitch = new TwitchConnection();
 
             if (!Connect())
                 return;
 
             const int pingDelay = 20;
-            DateTime lastPing = DateTime.Now;
+            DateTime lastPing = DateTime.UtcNow;
             while (true)
             {
                 Thread.Sleep(1000);
@@ -148,20 +162,23 @@ namespace TwitchChat
                 if (lastEvent.Elapsed().TotalSeconds >= pingDelay && lastPing.Elapsed().TotalSeconds >= pingDelay)
                 {
                     m_twitch.Ping();
-                    lastPing = DateTime.Now;
+                    lastPing = DateTime.UtcNow;
                 }
+
+                if (m_lastViewerCheck.Elapsed().TotalMinutes >= 2)
+                    GetChannelData();
 
                 if (lastEvent.Elapsed().TotalMinutes >= 1)
                 {
-                    WinterBotSource.Log.BeginReconnect();
+                    Log.Instance.BeginReconnect();
                     WriteStatus("Disconnected!");
 
-                    m_twitch.Quit(250);
+                    m_twitch.Quit();
 
                     if (!Connect())
                         return;
 
-                    WinterBotSource.Log.EndReconnect();
+                    Log.Instance.EndReconnect();
                 }
                 else if (m_reconnect)
                 {
@@ -175,33 +192,41 @@ namespace TwitchChat
 
         bool Connect()
         {
+            if (m_channel != null)
+            {
+                m_channel.Leave();
+
+                m_channel.ModeratorJoined -= ModJoined;
+                m_channel.UserChatCleared -= ClearChatHandler;
+                m_channel.MessageReceived -= ChatMessageReceived;
+                m_channel.StatusMessageReceived -= JtvMessageReceived;
+                m_channel.ActionReceived -= ChatActionReceived;
+                m_channel.UserSubscribed -= SubscribeHandler;
+            }
+            
             if (m_twitch != null)
             {
-                var user = CurrentUser;
-                if (user != null)
-                    user.ModeratorStatusChanged -= ModStatusChanged;
-                m_twitch.InformChatClear -= ClearChatHandler;
-                m_twitch.MessageReceived -= ChatMessageReceived;
-                m_twitch.JtvMessageReceived -= JtvMessageReceived;
-                m_twitch.ActionReceived -= ChatActionReceived;
-                m_twitch.UserSubscribed -= SubscribeHandler;
-                m_twitch.StatusUpdate -= StatusUpdate;
                 m_twitch.Quit();
             }
 
-            string channel = m_channel.ToLower();
-            m_users = new TwitchUsers(channel);
-            m_twitch = new TwitchClient(m_users);
-            m_twitch.InformChatClear += ClearChatHandler;
-            m_twitch.MessageReceived += ChatMessageReceived;
-            m_twitch.JtvMessageReceived += JtvMessageReceived;
-            m_twitch.ActionReceived += ChatActionReceived;
-            m_twitch.UserSubscribed += SubscribeHandler;
-            m_twitch.StatusUpdate += StatusUpdate;
 
-            var currUser = CurrentUser = m_users.GetUser(m_options.User);
-            currUser.ModeratorStatusChanged += ModStatusChanged;
-            ModStatusChanged(currUser, currUser.IsStreamer || currUser.IsModerator);
+
+            m_twitch = new TwitchConnection();
+            m_channel = m_twitch.Create(m_channelName);
+
+            m_channel.ModeratorJoined += ModJoined;
+            m_channel.UserChatCleared += ClearChatHandler;
+            m_channel.MessageReceived += ChatMessageReceived;
+            m_channel.StatusMessageReceived += JtvMessageReceived;
+            m_channel.ActionReceived += ChatActionReceived;
+            m_channel.UserSubscribed += SubscribeHandler;
+
+            var currUser = CurrentUser = m_channel.GetUser(m_options.User);
+
+            if (currUser.IsModerator)
+                ModJoined(m_channel, currUser);
+            else
+                ModLeft(m_channel, currUser);
             
             bool first = true;
             ConnectResult result;
@@ -224,30 +249,27 @@ namespace TwitchChat
                     Thread.Sleep(sleepTime);
 
                 first = false;
-                result = m_twitch.Connect(channel, m_options.User, m_options.Pass);
+                result = m_twitch.Connect(m_options.User, m_options.Pass);
 
                 if (result == ConnectResult.LoginFailed)
                 {
                     WriteStatus("Failed to login, please change options.ini and restart the application.");
                     return false;
                 }
-                else if (result != ConnectResult.Success)
+                else if (result != ConnectResult.Connected)
                 {
-                    WriteStatus("Failed to connect: {0}", result == ConnectResult.NetworkFailed ? "network failed" : "failed");
+                    WriteStatus("Failed to connect: {0}", result == ConnectResult.NetworkError ? "network error" : "failed");
                 }
-            } while (result != ConnectResult.Success);
+            } while (result != ConnectResult.Connected);
 
-            WriteStatus("Connected to channel {0}.", channel);
+            m_channel.Join();
+            WriteStatus("Connected to channel {0}.", m_channel.Name);
             return true;
         }
 
-        private void StatusUpdate(TwitchClient sender, string message)
-        {
-            WriteStatus(message);
-        }
 
         #region Event Handlers
-        private void SubscribeHandler(TwitchClient sender, TwitchUser user)
+        private void SubscribeHandler(TwitchChannel sender, TwitchUser user)
         {
             if (PlaySounds)
                 m_subSound.Play();
@@ -255,17 +277,19 @@ namespace TwitchChat
             Dispatcher.BeginInvoke(DispatcherPriority.Normal, new Action<TwitchUser>(DispatcherUserSubscribed), user);
         }
 
-        private void ChatActionReceived(TwitchClient sender, TwitchUser user, string text)
+        private void ChatActionReceived(TwitchChannel sender, TwitchUser user, string text)
         {
             if (m_options.Ignore.Contains(user.Name))
                 return;
 
-            user.EnsureIconsDownloaded();
+            var emotes = Emoticons;
+            if (emotes != null)
+                emotes.EnsureDownloaded(user.ImageSet, m_cache);
             Dispatcher.BeginInvoke(DispatcherPriority.Normal, new Action<ChatItem>(AddItem), new ChatAction(this, user, text));
         }
 
 
-        private void JtvMessageReceived(TwitchClient sender, TwitchUser user, string text)
+        private void JtvMessageReceived(TwitchChannel sender, string text)
         {
             if (text.StartsWith("The moderators of this"))
             {
@@ -278,12 +302,15 @@ namespace TwitchChat
             WriteStatus(text);
         }
 
-        private void ChatMessageReceived(TwitchClient sender, TwitchUser user, string text)
+        private void ChatMessageReceived(TwitchChannel sender, TwitchUser user, string text)
         {
             if (m_options.Ignore.Contains(user.Name))
                 return;
 
-            user.EnsureIconsDownloaded();
+            var emotes = Emoticons;
+            if (emotes != null)
+                emotes.EnsureDownloaded(user.ImageSet, m_cache);
+
             bool question = false;
             if (HighlightQuestions)
             {
@@ -300,14 +327,16 @@ namespace TwitchChat
             Dispatcher.BeginInvoke(DispatcherPriority.Normal, new Action<ChatItem>(AddItem), new ChatMessage(this, user, text, question));
         }
 
-
-        void Instance_ChannelDataReceived(string arg1, List<TwitchChannelResponse> arg2)
+        public async void GetChannelData()
         {
-            string text = "OFFLINE";
-            if (arg2.Count == 1)
-                text = arg2[0].channel_count.ToString() + " viewers";
+            m_lastViewerCheck = DateTime.UtcNow;
 
-            Dispatcher.BeginInvoke(DispatcherPriority.Normal, new Action<string>(SetViewers), text);
+            var data = await TwitchApi.GetLiveChannelData(m_channelName);
+            string text = "OFFLINE";
+            if (data != null)
+                text = data.CurrentViewerCount.ToString() + " viewers";
+
+            await Dispatcher.BeginInvoke(DispatcherPriority.Normal, new Action<string>(SetViewers), text);
         }
 
         private void SetViewers(string value)
@@ -316,7 +345,7 @@ namespace TwitchChat
         }
 
 
-        private void ClearChatHandler(TwitchClient sender, TwitchUser user)
+        private void ClearChatHandler(TwitchChannel sender, TwitchUser user)
         {
             Dispatcher.BeginInvoke(DispatcherPriority.Normal, new Action<TwitchUser>(DispatcherClearChat), user);
         }
@@ -391,9 +420,16 @@ namespace TwitchChat
             }
         }
 
-        private void ModStatusChanged(TwitchUser user, bool modStatus)
+        private void ModJoined(TwitchChannel conn, TwitchUser user)
         {
-            ModButtonVisibility = modStatus ? Visibility.Visible : Visibility.Collapsed;
+            if (user == CurrentUser)
+                ModButtonVisibility = Visibility.Visible;
+        }
+
+        private void ModLeft(TwitchChannel conn, TwitchUser user)
+        {
+            if (user == CurrentUser)
+                ModButtonVisibility = Visibility.Collapsed;
         }
         
         public bool PlaySounds
@@ -575,7 +611,7 @@ namespace TwitchChat
         {
             int time;
             if (TryParseMenuTime(sender as MenuItem, out time))
-                m_twitch.SendMessage(Importance.High, string.Format(".commercial {0}", time));
+                m_channel.SendMessage(string.Format(".commercial {0}", time));
         }
 
         bool TryParseMenuTime(MenuItem item, out int time)
@@ -598,33 +634,32 @@ namespace TwitchChat
 
         void OnClearChat(object sender, RoutedEventArgs e)
         {
-            m_twitch.SendMessage(Importance.High, ".clear");
+            m_channel.SendMessage(".clear");
         }
 
         void OnSlowMode(object sender, RoutedEventArgs e)
         {
             int time;
             if (TryParseMenuTime(sender as MenuItem, out time))
-                m_twitch.SendMessage(Importance.High, string.Format(".slow {0}", time));
+                m_channel.SendMessage(string.Format(".slow {0}", time));
         }
 
         void OnSlowModeOff(object sender, RoutedEventArgs e)
         {
-            m_twitch.SendMessage(Importance.High, ".slowoff");
+            m_channel.SendMessage(".slowoff");
         }
         void OnSubMode(object sender, RoutedEventArgs e)
         {
-            m_twitch.SendMessage(Importance.High, ".subscribers");
+            m_channel.SendMessage(".subscribers");
         }
 
         void OnSubModeOff(object sender, RoutedEventArgs e)
         {
-            m_twitch.SendMessage(Importance.High, ".subscribersoff");
+            m_channel.SendMessage(".subscribersoff");
         }
 
         void OnFontSize(object sender, RoutedEventArgs e)
         {
-
             var menuItem = (MenuItem)sender;
 
             ContextMenu menu = (ContextMenu)menuItem.Parent;
@@ -681,11 +716,10 @@ namespace TwitchChat
         private void UpdateChannel(string channel)
         {
             channel = channel.ToLower();
-            if (m_channel != channel)
+            if (m_channelName != channel)
             {
-                TwitchHttp.Instance.StopPolling();
-                m_channel = channel;
-                TwitchHttp.Instance.PollChannelData(m_channel);
+                m_channelName = channel;
+                GetChannelData();
                 OnReconnect(null, null);
             }
         }
@@ -732,9 +766,8 @@ namespace TwitchChat
 
             text = text.Replace('\n', ' ');
 
-            m_twitch.SendMessage(Importance.High, text);
-
-            var user = m_twitch.ChannelData.GetUser(m_options.User);
+            m_channel.SendMessage(text);
+            var user = m_channel.GetUser(m_options.User);
             AddItem(new ChatMessage(this, ItemType.Message, user, text));
         }
 
@@ -745,7 +778,7 @@ namespace TwitchChat
             if (text.ToLower().StartsWith(".mods"))
                 m_modListRequested = true;
 
-            m_twitch.SendMessage(Importance.High, text);
+            m_channel.SendMessage(text);
         }
 
         private void ScrollBar_ScrollChanged(object sender, ScrollChangedEventArgs e)

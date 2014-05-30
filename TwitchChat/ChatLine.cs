@@ -1,4 +1,5 @@
-﻿using System;
+﻿using DarkAutumn.Twitch;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
@@ -12,7 +13,6 @@ using System.Windows.Documents;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using TwitchChat.Properties;
-using Winter;
 
 namespace TwitchChat
 {
@@ -27,13 +27,13 @@ namespace TwitchChat
                 typeof(ChatLine),
                 new PropertyMetadata(default(ChatItem), OnItemsPropertyChanged));
 
-        static Dictionary<TwitchEmoticon, BitmapImage> s_emotes = new Dictionary<TwitchEmoticon, BitmapImage>();
+        static Dictionary<Emoticon, BitmapImage> s_emotes = new Dictionary<Emoticon, BitmapImage>();
 
         Run m_name;
         List<Run> m_messages = new List<Run>();
         InlineUIContainer m_mod;
         TimeOutIcon m_timeout, m_eight, m_ban;
-        Winter.TwitchUser m_user;
+        TwitchUser m_user;
 
         MainWindow Controller { get { return Value != null ? Value.Controller : null; } }
 
@@ -307,7 +307,7 @@ namespace TwitchChat
             var weight = (msg.Type == ItemType.Question) ? FontWeights.Bold : FontWeights.Normal;
             var color = (msg.Type == ItemType.Question) ? Brushes.Red : Brushes.Black;
 
-            var set = TwitchHttp.Instance.ImageSet;
+            var set = MainWindow.Emoticons;
             if (set == null)   
             {
                 var run = new Run(text) { Foreground = color, FontWeight = weight, BaselineAlignment = BaselineAlignment.Center };
@@ -317,15 +317,15 @@ namespace TwitchChat
             }
 
             int curr = 0;
-            var emoticons = from item in set.Find(text, m_user.IconSet)
-                            orderby item.Item2, item.Item3 descending, item.Item1.Default
+            var emoticons = from item in set.Find(text, m_user.ImageSet)
+                            orderby item.Offset, item.Length descending, item.Emoticon.ImageSet.Id
                             select item;
 
             foreach (var item in emoticons)
             {
-                var emote = item.Item1;
-                var start = item.Item2;
-                var len = item.Item3;
+                var emote = item.Emoticon;
+                var start = item.Offset;
+                var len = item.Length;
 
                 if (start < curr)
                     continue;
@@ -341,7 +341,7 @@ namespace TwitchChat
                     }
 
                     InlineUIContainer cont = new InlineUIContainer(img);
-                    cont.ToolTip = emote.Name;
+                    cont.ToolTip = emote.Regex;
                     cont.BaselineAlignment = BaselineAlignment.Center;
                     Inlines.Add(cont);
                 }
@@ -363,7 +363,7 @@ namespace TwitchChat
             }
         }
 
-        private static Image GetImage(TwitchEmoticon emote)
+        private static Image GetImage(Emoticon emote)
         {
             BitmapImage src;
             if (!s_emotes.TryGetValue(emote, out src))
