@@ -656,6 +656,29 @@ namespace TwitchChat
             Messages.Clear();
         }
 
+        private void OnPurgeContaining(object sender, RoutedEventArgs e)
+        {
+            ShowPurgeDialog(null, 1);
+        }
+
+        private void OnTimeoutContaining(object sender, RoutedEventArgs e)
+        {
+            ShowPurgeDialog(null, 600);
+        }
+
+        private void OnBanContaining(object sender, RoutedEventArgs e)
+        {
+            ShowPurgeDialog(null, -1);
+        }
+
+        internal void ShowPurgeDialog(string text, int duration)
+        {
+            var win = new PurgeWindow(text, duration);
+            bool result = win.ShowDialog() ?? false;
+
+            //TODO
+        }
+
         private void OnCommercial(object sender, RoutedEventArgs e)
         {
             int time;

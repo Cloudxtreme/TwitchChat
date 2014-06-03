@@ -107,6 +107,27 @@ namespace TwitchChat
             AddMenuItem("Profile", null, profile_Click);
             ContextMenu.Items.Add(new Separator());
             AddMenuItem("Unban", null, profile_Unban);
+
+            var val = Value as ChatMessage;
+
+            string text = null;
+            if (val == null)
+                return;
+
+            if (val.User.IsSubscriber || !Controller.CurrentUser.IsSubscriber)
+                return;
+
+            text = val.Message;
+
+            if (text != null)
+            {
+                ContextMenu.Items.Add(new Separator());
+                AddMenuItem("Purge Similar...", null, (s, evt) => Controller.ShowPurgeDialog(text, 1));
+                AddMenuItem("Timeout Similar...", s_timeout, (s, evt) => Controller.ShowPurgeDialog(text, 600));
+                AddMenuItem("8 Hour Timeout Similar...", s_eight, (s, evt) => Controller.ShowPurgeDialog(text, 28800));
+                AddMenuItem("Ban Similar...", s_ban, (s, evt) => Controller.ShowPurgeDialog(text, -1));
+            }
+
             ContextMenu.Items.Add(new Separator());
             AddMenuItem("Purge", null, purge_click);
             AddMenuItem("Timeout", s_timeout, timeout_click);

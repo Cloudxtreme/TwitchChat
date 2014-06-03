@@ -67,6 +67,9 @@
       <Generator>MSBuild:Compile</Generator>
       <SubType>Designer</SubType>
     </ApplicationDefinition>
+    <Compile Include="PurgeWindow.xaml.cs">
+      <DependentUpon>PurgeWindow.xaml</DependentUpon>
+    </Compile>
     <Compile Include="TwitchApi.cs" />
     <Compile Include="TwitchJson.cs" />
     <Page Include="MainWindow.xaml">
@@ -87,6 +90,10 @@
       <DependentUpon>MainWindow.xaml</DependentUpon>
       <SubType>Code</SubType>
     </Compile>
+    <Page Include="PurgeWindow.xaml">
+      <SubType>Designer</SubType>
+      <Generator>MSBuild:Compile</Generator>
+    </Page>
   </ItemGroup>
   <ItemGroup>
     <Compile Include="Properties\AssemblyInfo.cs">

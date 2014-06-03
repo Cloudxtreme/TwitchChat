@@ -58,7 +58,8 @@
         </ScrollViewer>
 
         <TextBox SpellCheck.IsEnabled="True" MaxLength="540" ScrollViewer.HorizontalScrollBarVisibility="Disabled"
-         ScrollViewer.VerticalScrollBarVisibility="Auto" Grid.Row="1" Name="ChatInput" AcceptsReturn="True" TextWrapping="Wrap"  FontSize="14" PreviewKeyDown="Chat_PreviewKeyDown" Margin="3,0,-3,0"/>
+         ScrollViewer.VerticalScrollBarVisibility="Auto" Grid.Row="1" Name="ChatInput" AcceptsReturn="True" TextWrapping="Wrap" 
+                 FontSize="14" PreviewKeyDown="Chat_PreviewKeyDown" Margin="3,0,-3,0"/>
 
             <StackPanel HorizontalAlignment="Right" VerticalAlignment="Center" Grid.Row="2" Orientation="Horizontal">
             <Button Visibility="{Binding ModButtonVisibility}" Margin="4" Name="ModButton" Width="24" Height="24" ContextMenuService.Placement="Top" PreviewMouseLeftButtonDown="ModButton_MouseLeftButtonDown" MouseLeftButtonUp="Button_MouseLeftButtonUp">
@@ -161,6 +162,35 @@
                                             </Style>
                                         </MenuItem.Style>
                                     </MenuItem>
+
+
+
+                                    <Separator/>
+
+                                    <MenuItem Header="Purge text containing...">
+                                        <MenuItem.Style>
+                                            <Style TargetType="MenuItem">
+                                                <EventSetter Event="Click" Handler="OnPurgeContaining"/>
+                                            </Style>
+                                        </MenuItem.Style>
+                                    </MenuItem>
+
+                                    <MenuItem Header="Timeout text containing...">
+                                        <MenuItem.Style>
+                                            <Style TargetType="MenuItem">
+                                                <EventSetter Event="Click" Handler="OnTimeoutContaining"/>
+                                            </Style>
+                                        </MenuItem.Style>
+                                    </MenuItem>
+
+                                    <MenuItem Header="Ban text containing...">
+                                        <MenuItem.Style>
+                                            <Style TargetType="MenuItem">
+                                                <EventSetter Event="Click" Handler="OnBanContaining"/>
+                                            </Style>
+                                        </MenuItem.Style>
+                                    </MenuItem>
+
                                 </ContextMenu>
                             </Setter.Value>
                         </Setter>
@@ -255,7 +285,9 @@
                                     <MenuItem Header="Show Mod Icons" IsCheckable="True" IsChecked="{Binding ShowIcons, Mode=TwoWay}" />
                                     <MenuItem Header="Show Timestamps" IsCheckable="True" IsChecked="{Binding ShowTimestamps, Mode=TwoWay}" />
                                     <MenuItem Header="Always On Top" IsCheckable="True" IsChecked="{Binding OnTop, Mode=TwoWay}" />
+
                                     <Separator/>
+                                    
                                     <MenuItem Header="Clear Window">
                                         <MenuItem.Style>
                                             <Style TargetType="MenuItem">
