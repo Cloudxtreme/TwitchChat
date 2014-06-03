@@ -7,6 +7,7 @@ using System.Linq;
 using System.Net;
 using System.Text;
 using System.Text.RegularExpressions;
+using System.Threading;
 using System.Threading.Tasks;
 using TwitchChat.JSON;
 
@@ -15,6 +16,7 @@ namespace TwitchChat
     class Emoticon
     {
         private System.Text.RegularExpressions.Regex m_reg;
+        Task m_task;
 
         public string Regex { get; private set; }
         public int Width { get; private set; }
@@ -25,7 +27,6 @@ namespace TwitchChat
 
         public Emoticon(EmoticonSet set, string regex, JsonImage data)
         {
-
             Regex = regex;
             Width = data.width ?? -1;
             Height = data.height ?? -1;
@@ -55,31 +56,47 @@ namespace TwitchChat
             if (File.Exists(localFilePath))
                 LocalFile = localFilePath;
 
-            await Download(localFilePath);
-            
-            /*
-
-            string localFilePath = GetLocalPath(ImageSet.Cache);
-            var client = new WebClient();
-            var result = new TaskCompletionSource<string>();
-            client.DownloadFileCompleted += (sender, e) =>
+            var task = m_task;
+            if (task == null)
             {
-                if (e.Error != null)
-                    result.SetResult(localFilePath);
-                else
-                    result.SetResult(null);
-            };
-            
-            client.DownloadFileAsync(new Uri(Url), localFilePath);
-             
-            LocalFile = await result.Task;
-             */
+                lock (this)
+                {
+                    if (m_task == null)
+                        m_task = Download(localFilePath);
+
+                    task = m_task;
+                }
+            }
+
+            await task;
         }
         internal async void ForceRedownload()
         {
-            LocalFile = null;
+            Task task;
+            lock (this)
+            {
+                task = m_task;
+                m_task = null;
+            }
+
+            if (task != null)
+                await task;
+
             string localFilePath = GetLocalPath(ImageSet.Cache);
-            await Download(localFilePath);
+            if (File.Exists(localFilePath))
+            {
+                try
+                {
+                    File.Delete(localFilePath);
+                    LocalFile = null;
+                }
+                catch
+                {
+                    return;
+                }
+            }
+
+            await Download();
         }
 
         private async Task Download(string localFilePath)
@@ -91,10 +108,21 @@ namespace TwitchChat
             if (!Directory.Exists(directory))
                 Directory.CreateDirectory(directory);
 
-            using (FileStream fs = new FileStream(localFilePath, FileMode.OpenOrCreate, FileAccess.ReadWrite))
+            try
             {
-                await response.GetResponseStream().CopyToAsync(fs);
-                LocalFile = localFilePath;
+                using (FileStream fs = new FileStream(localFilePath, FileMode.OpenOrCreate, FileAccess.ReadWrite))
+                {
+                    await response.GetResponseStream().CopyToAsync(fs);
+                    LocalFile = localFilePath;
+                }
+            }
+            catch (IOException)
+            {
+                lock (this)
+                {
+                    m_task = null;
+                    LocalFile = null;
+                }
             }
         }
 

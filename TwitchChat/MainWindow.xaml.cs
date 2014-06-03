@@ -102,7 +102,7 @@ namespace TwitchChat
                 Exception obj = (Exception)e.ExceptionObject;
                 string text = string.Format("{0}: {1}\n{2}", obj.GetType().ToString(), obj.Message, obj.StackTrace.ToString());
 
-                using (var file = File.CreateText(System.IO.Path.Combine(myDocuments, "winterbot_error.txt")))
+                using (var file = File.AppendText(System.IO.Path.Combine(myDocuments, "winterbot_error.txt")))
                     file.WriteLine(text);
 
                 MessageBox.Show(text, "Unhandled Exception");
