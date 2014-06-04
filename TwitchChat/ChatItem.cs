@@ -23,12 +23,15 @@ namespace TwitchChat
 
         public event Action Clear;
 
+        public TwitchChannel Channel { get; private set; }
+
         public ItemType Type { get; private set; }
 
         public TwitchUser User { get; protected set; }
 
-        public ChatItem(MainWindow controller, ItemType type)
+        public ChatItem(TwitchChannel channel, MainWindow controller, ItemType type)
         {
+            Channel = channel;
             Controller = controller;
             Type = type;
         }
@@ -43,8 +46,8 @@ namespace TwitchChat
 
     public class Subscriber : ChatItem
     {
-        public Subscriber(MainWindow controller, TwitchUser user)
-            : base(controller, ItemType.Subscriber)
+        public Subscriber(TwitchChannel channel, MainWindow controller, TwitchUser user)
+            : base(channel, controller, ItemType.Subscriber)
         {
             User = user;
         }
@@ -54,15 +57,15 @@ namespace TwitchChat
     {
         public string Message { get; private set; }
 
-        public ChatMessage(MainWindow controller, TwitchUser user, string message, bool question)
-            : base(controller, question ? ItemType.Question : ItemType.Message)
+        public ChatMessage(TwitchChannel channel, MainWindow controller, TwitchUser user, string message, bool question)
+            : base(channel, controller, question ? ItemType.Question : ItemType.Message)
         {
             User = user;
             Message = message;
         }
 
-        public ChatMessage(MainWindow controller, ItemType type, TwitchUser user, string message)
-            : base(controller, type)
+        public ChatMessage(TwitchChannel channel, MainWindow controller, ItemType type, TwitchUser user, string message)
+            : base(channel, controller, type)
         {
             User = user;
             Message = message;
@@ -71,8 +74,8 @@ namespace TwitchChat
 
     public class ChatAction : ChatMessage
     {
-        public ChatAction(MainWindow controller, TwitchUser user, string message)
-            : base(controller, ItemType.Action, user, message)
+        public ChatAction(TwitchChannel channel, MainWindow controller, TwitchUser user, string message)
+            : base(channel, controller, ItemType.Action, user, message)
         {
         }
     }
@@ -81,8 +84,8 @@ namespace TwitchChat
     {
         public string Message { get; private set; }
 
-        public StatusMessage(MainWindow controller, string message)
-            : base(controller, ItemType.Status)
+        public StatusMessage(TwitchChannel channel, MainWindow controller, string message)
+            : base(channel, controller, ItemType.Status)
         {
             Message = message;
         }

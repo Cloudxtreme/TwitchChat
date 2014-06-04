@@ -114,7 +114,7 @@ namespace TwitchChat
             if (val == null)
                 return;
 
-            if (val.User.IsSubscriber || !Controller.CurrentUser.IsSubscriber)
+            if (val.User.IsModerator || !Controller.CurrentUser.IsModerator)
                 return;
 
             text = val.Message;

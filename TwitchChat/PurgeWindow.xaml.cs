@@ -20,7 +20,7 @@ namespace TwitchChat
     /// </summary>
     public partial class PurgeWindow : Window, INotifyPropertyChanged
     {
-        bool m_ban, m_oneTime = true, m_regex;
+        bool m_ban, m_oneTime = true;
         string m_text, m_durationText;
 
 
@@ -32,7 +32,7 @@ namespace TwitchChat
                 handler(this, new PropertyChangedEventArgs(name));
         }
 
-        public PurgeWindow(string text, int duration)
+        public PurgeWindow(Window parent, string text, int duration)
         {
             InitializeComponent();
 
@@ -46,15 +46,20 @@ namespace TwitchChat
                 DurationText = duration.ToString();
 
             TextBox.Focus();
+
+
+            Left = parent.Left + (parent.Width - ActualWidth) / 2;
+            Top = parent.Top + (parent.Height - ActualHeight) / 2;
+
         }
 
-        private void Button_Click(object sender, RoutedEventArgs e)
+        private void Ok_Click(object sender, RoutedEventArgs e)
         {
             DialogResult = true;
             Close();
         }
 
-        private void Button_Click_1(object sender, RoutedEventArgs e)
+        private void Cancel_Click(object sender, RoutedEventArgs e)
         {
             DialogResult = false;
             Close();
@@ -122,22 +127,6 @@ namespace TwitchChat
                 {
                     m_oneTime = value;
                     OnPropertyChanged("OneTime");
-                }
-            }
-        }
-
-        public bool Regex
-        {
-            get
-            {
-                return m_regex;
-            }
-            set
-            {
-                if (m_regex != value)
-                {
-                    m_regex = value;
-                    OnPropertyChanged("Regex");
                 }
             }
         }

@@ -301,7 +301,6 @@ namespace TwitchChat
                 m_channel = null;
             }
 
-
             channel.Leave();
 
             channel.ModeratorJoined -= ModJoined;
@@ -322,7 +321,8 @@ namespace TwitchChat
             if (PlaySounds)
                 m_subSound.Play();
 
-            Dispatcher.BeginInvoke(DispatcherPriority.Normal, new Action<TwitchUser>(DispatcherUserSubscribed), user);
+            var sub = new Subscriber(sender, this, user);
+            Dispatcher.BeginInvoke(DispatcherPriority.Normal, new Action<Subscriber>(DispatcherUserSubscribed), sub);
         }
 
         private void ChatActionReceived(TwitchChannel sender, TwitchUser user, string text)
@@ -333,7 +333,8 @@ namespace TwitchChat
             var emotes = Emoticons;
             if (emotes != null)
                 emotes.EnsureDownloaded(user.ImageSet);
-            Dispatcher.BeginInvoke(DispatcherPriority.Normal, new Action<ChatItem>(AddItem), new ChatAction(this, user, text));
+
+            Dispatcher.BeginInvoke(DispatcherPriority.Normal, new Action<ChatItem>(AddItem), new ChatAction(sender, this, user, text));
         }
 
 
@@ -372,7 +373,7 @@ namespace TwitchChat
                 }
             }
 
-            Dispatcher.BeginInvoke(DispatcherPriority.Normal, new Action<ChatItem>(AddItem), new ChatMessage(this, user, text, question));
+            Dispatcher.BeginInvoke(DispatcherPriority.Normal, new Action<ChatItem>(AddItem), new ChatMessage(sender, this, user, text, question));
         }
 
         public async void GetChannelData()
@@ -404,7 +405,7 @@ namespace TwitchChat
             if (args.Length > 0)
                 msg = string.Format(msg, args);
 
-            Dispatcher.BeginInvoke(DispatcherPriority.Normal, new Action<ChatItem>(AddItem), new StatusMessage(this, msg));
+            Dispatcher.BeginInvoke(DispatcherPriority.Normal, new Action<ChatItem>(AddItem), new StatusMessage(null, this, msg));
         }
 
 
@@ -420,9 +421,9 @@ namespace TwitchChat
         }
 
 
-        private void DispatcherUserSubscribed(TwitchUser user)
+        private void DispatcherUserSubscribed(Subscriber sub)
         {
-            AddItem(new Subscriber(this, user));
+            AddItem(sub);
         }
 
         void AddItem(ChatItem item)
@@ -673,10 +674,47 @@ namespace TwitchChat
 
         internal void ShowPurgeDialog(string text, int duration)
         {
-            var win = new PurgeWindow(text, duration);
+            var win = new PurgeWindow(this, text, duration);
             bool result = win.ShowDialog() ?? false;
 
-            //TODO
+            if (!result)
+                return;
+
+            text = win.Text;
+
+            if (!int.TryParse(win.DurationText, out duration) || duration < 1)
+                duration = 1;
+
+            if (string.IsNullOrWhiteSpace(text))
+                return;
+
+            var channel = m_channel;
+            var users = (from item in Messages
+                         where channel == item.Channel && item.User != null && !item.User.IsModerator
+                         let msg = item as ChatMessage
+                         where msg != null && msg.Message.IsWildcardMatch(text)
+                         group msg by msg.User into g
+                         select g.Key).ToArray();
+
+            if (users.Length == 0)
+                return;
+
+            var choice = MessageBoxResult.Yes;
+            if (win.Ban && ConfirmBans)
+                choice = MessageBox.Show("Are you sure you want to ban the following users?\n" + string.Join("\n", users.Select(p=>p.Name)), "Ban Users", MessageBoxButton.YesNo);
+            else if (duration > 1 && ConfirmTimeouts)
+                choice = MessageBox.Show(string.Format("Are you sure you want to give a {0} second timeout to the following users?\n{1}", duration, string.Join("\n", users.Select(p=>p.Name))), "Timeout Users", MessageBoxButton.YesNo);
+
+            if (choice != MessageBoxResult.Yes)
+                return;
+
+            foreach (var user in users)
+            {
+                if (win.Ban)
+                    channel.Ban(user);
+                else
+                    channel.Timeout(user, duration);
+            }
         }
 
         private void OnCommercial(object sender, RoutedEventArgs e)

@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Runtime.InteropServices;
 using System.Text;
+using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -10,6 +11,17 @@ namespace TwitchChat
 {
     static class Helpers
     {
+        static string WildcardToRegex(string pattern)
+        {
+            return Regex.Escape(pattern).Replace(@"\*", ".*").Replace(@"\?", ".");
+        }
+
+        public static bool IsWildcardMatch(this string self, string pattern)
+        {
+            Regex r = new Regex(WildcardToRegex(pattern), RegexOptions.IgnoreCase);
+            return r.IsMatch(self);
+        }
+
         public static TimeSpan Elapsed(this DateTime self)
         {
             return DateTime.UtcNow - self;

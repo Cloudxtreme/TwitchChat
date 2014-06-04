@@ -26,11 +26,10 @@
         <CheckBox Grid.Row="1" Grid.Column="2" Margin="16,8" IsChecked="{Binding Ban, Mode=TwoWay}" >Ban</CheckBox>
         <StackPanel Margin="8,8,0,0" Orientation="Horizontal" Grid.Row="2" Grid.Column="0" Grid.ColumnSpan="3">
             <CheckBox Margin="0,0" IsChecked="{Binding OneTime, Mode=TwoWay}">One Time</CheckBox>
-            <CheckBox Margin="16,0"  IsChecked="{Binding Regex, Mode=TwoWay}">Regex</CheckBox>
         </StackPanel>
         <StackPanel Grid.Row="3" Grid.Column="1" Grid.ColumnSpan="3" Orientation="Horizontal" HorizontalAlignment="Right">
-            <Button Margin="4" Width="80" Click="Button_Click_1">Cancel</Button>
-            <Button Margin="4" Width="80" Click="Button_Click">Ok</Button>
+            <Button IsCancel="True" Margin="4" Width="80" Click="Cancel_Click">Cancel</Button>
+            <Button IsDefault="True"  Margin="4" Width="80" Click="Ok_Click">Ok</Button>
         </StackPanel>
         <!--
         <StackPanel Grid.Column="1" Orientation="Horizontal">
