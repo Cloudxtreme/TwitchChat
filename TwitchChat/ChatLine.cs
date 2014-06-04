@@ -113,8 +113,6 @@ namespace TwitchChat
                 AddMenuItem("Chat Logs", s_logs, showlogs_Click);
 
             AddMenuItem("Profile", null, profile_Click);
-            ContextMenu.Items.Add(new Separator());
-            AddMenuItem("Unban", null, profile_Unban);
 
             var val = Value as ChatMessage;
 
@@ -125,8 +123,10 @@ namespace TwitchChat
             if (val.User.IsModerator || !Controller.CurrentUser.IsModerator)
                 return;
 
-            text = val.Message;
+            ContextMenu.Items.Add(new Separator());
+            AddMenuItem("Unban", null, profile_Unban);
 
+            text = val.Message;
             if (text != null)
             {
                 ContextMenu.Items.Add(new Separator());
