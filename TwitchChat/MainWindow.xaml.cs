@@ -43,8 +43,6 @@ namespace TwitchChat
 
         SoundPlayer m_subSound = new SoundPlayer(Properties.Resources.Subscriber);
 
-        DateTime m_lastViewerCheck = DateTime.MinValue;
-
         internal static EmoticonData Emoticons { get; private set; }
         
         public MainWindow()
@@ -151,38 +149,8 @@ namespace TwitchChat
             return false;
         }
 
-        bool m_pinged = false;
-
         private void dispatcherTimer_Tick(object sender, EventArgs e)
         {
-            var channel = m_channel;
-            var twitch = GetConnection();
-
-            if (twitch == null)
-                return;
-
-            // this timer runs every two minutes
-            if (twitch.LastEvent.Elapsed().TotalSeconds >= 90)
-            {
-                if (!m_pinged)
-                {
-                    twitch.Ping();
-                    m_pinged = true;
-                }
-                else
-                {
-                    Log.Instance.Disconnected();
-                    WriteStatus("Disconnected!");
-                    Reconnect(m_channelName);
-
-                    m_pinged = false;
-                }
-            }
-            else
-            {
-                m_pinged = false;
-            }
-
             GetChannelData();
         }
 
@@ -378,8 +346,6 @@ namespace TwitchChat
 
         public async void GetChannelData()
         {
-            m_lastViewerCheck = DateTime.UtcNow;
-
             var data = await TwitchApi.GetLiveChannelData(m_channelName);
             string text = "OFFLINE";
             if (data != null)
