@@ -19,6 +19,7 @@ namespace TwitchChat
 
     public class ChatLine : TextBlock
     {
+        static string[] s_hasLogs = new string[] { "byzantiumsc", "darkautumn", "zlfreebird" };
         static BitmapImage s_sub, s_timeout, s_ban, s_eight, s_logs, s_check, s_mod;
         public static readonly DependencyProperty ItemsProperty =
             DependencyProperty.Register(
@@ -34,6 +35,8 @@ namespace TwitchChat
         InlineUIContainer m_mod;
         TimeOutIcon m_timeout, m_eight, m_ban;
         TwitchUser m_user;
+
+        string m_channelName;
 
         MainWindow Controller { get { return Value != null ? Value.Controller : null; } }
 
@@ -103,7 +106,12 @@ namespace TwitchChat
 
             AddMenuItem("Copy", null, copy_line);
             ContextMenu.Items.Add(new Separator());
-            AddMenuItem("Chat Logs", s_logs, showlogs_Click);
+
+            
+            m_channelName = Controller.ChannelName;
+            if (s_hasLogs.Contains(m_channelName))
+                AddMenuItem("Chat Logs", s_logs, showlogs_Click);
+
             AddMenuItem("Profile", null, profile_Click);
             ContextMenu.Items.Add(new Separator());
             AddMenuItem("Unban", null, profile_Unban);
@@ -159,7 +167,7 @@ namespace TwitchChat
 
         private void showlogs_Click(object sender, RoutedEventArgs e)
         {
-            Process.Start(string.Format("www.darkautumn.net/winter/chat.php?CHANNEL={0}&USER={1}", Controller.Channel.Text.ToLower(), m_user.Name));
+            Process.Start(string.Format("www.darkautumn.net/winter/chat.php?CHANNEL={0}&USER={1}", m_channelName, m_user.Name));
         }
 
         private void timeout_click(object sender, RoutedEventArgs e)

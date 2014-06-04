@@ -283,6 +283,14 @@ namespace TwitchChat
 
 
 
+        public string ChannelName
+        {
+            get
+            {
+                return m_channelName;
+            }
+        }
+
         #region Event Handlers
         private void SubscribeHandler(TwitchChannel sender, TwitchUser user)
         {
