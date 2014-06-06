@@ -111,9 +111,12 @@ namespace TwitchChat
             }
         }
 
-        public void Unban(TwitchUser user)
+        public async void Unban(TwitchUser user)
         {
-            m_channel.Unban(user);
+            var chan = m_channel;
+
+            while (!m_channel.Unban(user))
+                await Task.Delay(250);
         }
 
         public bool Ban(TwitchUser user)
@@ -124,11 +127,26 @@ namespace TwitchChat
 
             if (res == MessageBoxResult.Yes)
             {
-                m_channel.Ban(user);
+                BanWorker(m_channel, user);
                 return true;
             }
 
             return false;
+        }
+
+        async void BanWorker(TwitchChannel chan, TwitchUser user)
+        {
+            while (!chan.Ban(user) && chan.IsJoined)
+                await Task.Delay(250);
+        }
+
+        async void TimeoutWorker(TwitchChannel chan, TwitchUser user, int duration)
+        {
+            if (duration < 1)
+                duration = 1;
+
+            while (!chan.Timeout(user, duration) && chan.IsJoined)
+                await Task.Delay(250);
         }
 
         public bool Timeout(TwitchUser user, int duration)
@@ -142,7 +160,7 @@ namespace TwitchChat
 
             if (res == MessageBoxResult.Yes)
             {
-                m_channel.Timeout(user, duration);
+                TimeoutWorker(m_channel, user, duration);
                 return true;
             }
 
@@ -682,12 +700,27 @@ namespace TwitchChat
             if (choice != MessageBoxResult.Yes)
                 return;
 
+            Debug.Assert(duration != -1);
+            if (win.Ban)
+                duration = -1;
+
+            TimeoutUserList(duration, channel, users);
+        }
+
+        private static async void TimeoutUserList(int duration, TwitchChannel channel, TwitchUser[] users)
+        {
             foreach (var user in users)
             {
-                if (win.Ban)
-                    channel.Ban(user);
+                if (duration == -1)
+                {
+                    while (!channel.Ban(user))
+                        await Task.Delay(250);
+                }
                 else
-                    channel.Timeout(user, duration);
+                {
+                    while (!channel.Timeout(user, duration))
+                        await Task.Delay(250);
+                }
             }
         }
 
