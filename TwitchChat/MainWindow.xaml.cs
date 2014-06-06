@@ -204,7 +204,7 @@ namespace TwitchChat
         {
             Debug.Assert(m_channel == null);
 
-            var twitch = new TwitchConnection();
+            var twitch = new TwitchConnection(ClientType.Full);
             var connection = twitch.ConnectAsync(m_options.User, m_options.Pass);
 
             var channel = JoinChannel(twitch, channelName);
