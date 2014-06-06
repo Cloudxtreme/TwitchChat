@@ -255,13 +255,18 @@ namespace TwitchChat
             var channel = twitch.Create(name);
 
             channel.ModeratorJoined += ModJoined;
-            channel.UserChatCleared += ClearChatHandler;
+            channel.UserChatCleared += UserClearChatHandler;
             channel.MessageReceived += ChatMessageReceived;
             channel.MessageSent += ChatMessageReceived;
             channel.StatusMessageReceived += JtvMessageReceived;
             channel.ActionReceived += ChatActionReceived;
             channel.UserSubscribed += SubscribeHandler;
-
+            channel.ChatCleared += ChatCleared;
+            channel.SlowModeBegin += SlowModeHandler;
+            channel.SlowModeEnd += SlowModeEndHandler;
+            channel.SubModeBegin += SubModeBeginHandler;
+            channel.SubModeEnd += SubModeEndHandler;
+            
             // Setting initial state, it's ok we haven't joined the channel yet.
             var currUser = CurrentUser = channel.GetUser(m_options.User);
             if (currUser.IsModerator)
@@ -290,12 +295,18 @@ namespace TwitchChat
             channel.Leave();
 
             channel.ModeratorJoined -= ModJoined;
-            channel.UserChatCleared -= ClearChatHandler;
+            channel.UserChatCleared -= UserClearChatHandler;
             channel.MessageReceived -= ChatMessageReceived;
             channel.MessageSent -= ChatMessageReceived;
             channel.StatusMessageReceived -= JtvMessageReceived;
             channel.ActionReceived -= ChatActionReceived;
             channel.UserSubscribed -= SubscribeHandler;
+            channel.ChatCleared -= ChatCleared;
+            channel.SlowModeBegin -= SlowModeHandler;
+            channel.SlowModeEnd -= SlowModeEndHandler;
+            channel.SubModeBegin -= SubModeBeginHandler;
+            channel.SubModeEnd -= SubModeEndHandler;
+
             return channel.Connection;
         }
 
@@ -310,6 +321,31 @@ namespace TwitchChat
         }
 
         #region Event Handlers
+        private void ChatCleared(TwitchChannel channel)
+        {
+            Dispatcher.BeginInvoke(DispatcherPriority.Normal, new Action<ChatItem>(AddItem), new StatusMessage(null, this, "Chat was cleared by a moderator"));
+        }
+
+        private void SubModeEndHandler(TwitchChannel channel)
+        {
+            Dispatcher.BeginInvoke(DispatcherPriority.Normal, new Action<ChatItem>(AddItem), new StatusMessage(null, this, "This room is no longer in subscribers-only mode."));
+        }
+
+        private void SubModeBeginHandler(TwitchChannel channel)
+        {
+            Dispatcher.BeginInvoke(DispatcherPriority.Normal, new Action<ChatItem>(AddItem), new StatusMessage(null, this, "This room is now in subscribers-only mode."));
+        }
+
+        private void SlowModeEndHandler(TwitchChannel channel)
+        {
+            Dispatcher.BeginInvoke(DispatcherPriority.Normal, new Action<ChatItem>(AddItem), new StatusMessage(null, this, "This room is no longer in subscribers-only mode."));
+        }
+
+        private void SlowModeHandler(TwitchChannel channel, int time)
+        {
+            Dispatcher.BeginInvoke(DispatcherPriority.Normal, new Action<ChatItem>(AddItem), new StatusMessage(null, this, string.Format("This room is now in slow mode. You may send messages every {0} seconds.", time)));
+        }
+
         private void SubscribeHandler(TwitchChannel sender, TwitchUser user)
         {
             if (PlaySounds)
@@ -387,7 +423,7 @@ namespace TwitchChat
         }
 
 
-        private void ClearChatHandler(TwitchChannel sender, TwitchUser user)
+        private void UserClearChatHandler(TwitchChannel sender, TwitchUser user)
         {
             Dispatcher.BeginInvoke(DispatcherPriority.Normal, new Action<TwitchUser>(DispatcherClearChat), user);
         }
