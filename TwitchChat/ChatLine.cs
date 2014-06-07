@@ -6,6 +6,7 @@ using System.IO;
 using System.Linq;
 using System.Reflection;
 using System.Text;
+using System.Text.RegularExpressions;
 using System.Threading;
 using System.Windows;
 using System.Windows.Controls;
@@ -19,6 +20,10 @@ namespace TwitchChat
 
     public class ChatLine : TextBlock
     {
+        static Regex s_url = new Regex(@"(https?://)?([\w-]+\.)+([\w-]+)(/[\w-./?%&=]*)?", RegexOptions.IgnoreCase);
+        const string s_urlExtensionList = "arpa,com,edu,firm,gov,int,mil,mobi,nato,net,nom,org,store,web,me,ac,ad,ae,af,ag,ai,al,am,an,ao,aq,ar,as,at,au,aw,az,ba,bb,bd,be,bf,bg,bh,bi,bj,bm,bn,bo,br,bs,bt,bv,bw,by,bz,ca,cc,cf,cg,ch,ci,ck,cl,cm,cn,co,cr,cs,cu,cv,cx,cy,cz,de,dj,dk,dm,do,dz,ec,ee,eg,eh,er,es,et,eu,fi,fj,fk,fm,fo,fr,fx,ga,gb,gd,ge,gf,gh,gi,gl,gm,gn,gp,gq,gr,gs,gt,gu,gw,gy,hk,hm,hn,hr,ht,hu,id,ie,il,in,io,iq,ir,is,it,jm,jo,jp,ke,kg,kh,ki,km,kn,kp,kr,kw,ky,kz,la,lb,lc,li,lk,lr,ls,lt,lu,lv,ly,ma,mc,md,mg,mh,mk,ml,mm,mn,mo,mp,mq,mr,ms,mt,mu,mv,mw,mx,my,mz,na,nc,ne,nf,ng,ni,nl,no,np,nr,nt,nu,nz,om,pa,pe,pf,pg,ph,pk,pl,pm,pn,pr,pt,pw,py,qa,re,ro,ru,rw,sa,sb,sc,sd,se,sg,sh,si,sj,sk,sl,sm,sn,so,sr,st,su,sv,sy,sz,tc,td,tf,tg,th,tj,tk,tm,tn,to,tp,tr,tt,tv,tw,tz,ua,ug,uk,um,us,uy,uz,va,vc,ve,vg,vi,vn,vu,wf,ws,ye,yt,yu,za,zm,zr,zw";
+        static HashSet<string> s_urlExtensions = new HashSet<string>(s_urlExtensionList.Split(','));
+
         static string[] s_hasLogs = new string[] { "byzantiumsc", "darkautumn", "zlfreebird" };
         static BitmapImage s_sub, s_timeout, s_ban, s_eight, s_logs, s_check, s_mod;
         public static readonly DependencyProperty ItemsProperty =
@@ -99,20 +104,20 @@ namespace TwitchChat
 
             if (m_user == null)
             {
-                AddMenuItem("Copy", null, copy_line);
+                AddMenuItem(ContextMenu, "Copy", null, copy_line);
                 e.Handled = true;
                 return;
             }
 
-            AddMenuItem("Copy", null, copy_line);
+            AddMenuItem(ContextMenu, "Copy", null, copy_line);
             ContextMenu.Items.Add(new Separator());
 
             
             m_channelName = Controller.ChannelName;
             if (s_hasLogs.Contains(m_channelName))
-                AddMenuItem("Chat Logs", s_logs, showlogs_Click);
+                AddMenuItem(ContextMenu, "Chat Logs", s_logs, showlogs_Click);
 
-            AddMenuItem("Profile", null, profile_Click);
+            AddMenuItem(ContextMenu, "Profile", null, profile_Click);
 
             var val = Value as ChatMessage;
 
@@ -124,23 +129,23 @@ namespace TwitchChat
                 return;
 
             ContextMenu.Items.Add(new Separator());
-            AddMenuItem("Unban", null, profile_Unban);
+            AddMenuItem(ContextMenu, "Unban", null, profile_Unban);
 
             text = val.Message;
             if (text != null)
             {
                 ContextMenu.Items.Add(new Separator());
-                AddMenuItem("Purge Similar...", null, (s, evt) => Controller.ShowPurgeDialog(text, 1));
-                AddMenuItem("Timeout Similar...", s_timeout, (s, evt) => Controller.ShowPurgeDialog(text, 600));
-                AddMenuItem("8 Hour Timeout Similar...", s_eight, (s, evt) => Controller.ShowPurgeDialog(text, 28800));
-                AddMenuItem("Ban Similar...", s_ban, (s, evt) => Controller.ShowPurgeDialog(text, -1));
+                AddMenuItem(ContextMenu, "Purge Similar...", null, (s, evt) => Controller.ShowPurgeDialog(text, 1));
+                AddMenuItem(ContextMenu, "Timeout Similar...", s_timeout, (s, evt) => Controller.ShowPurgeDialog(text, 600));
+                AddMenuItem(ContextMenu, "8 Hour Timeout Similar...", s_eight, (s, evt) => Controller.ShowPurgeDialog(text, 28800));
+                AddMenuItem(ContextMenu, "Ban Similar...", s_ban, (s, evt) => Controller.ShowPurgeDialog(text, -1));
             }
 
             ContextMenu.Items.Add(new Separator());
-            AddMenuItem("Purge", null, purge_click);
-            AddMenuItem("Timeout", s_timeout, timeout_click);
-            AddMenuItem("8 Hour Timeout", s_eight, eight_click);
-            AddMenuItem("Ban", s_ban, ban_click);
+            AddMenuItem(ContextMenu, "Purge", null, purge_click);
+            AddMenuItem(ContextMenu, "Timeout", s_timeout, timeout_click);
+            AddMenuItem(ContextMenu, "8 Hour Timeout", s_eight, eight_click);
+            AddMenuItem(ContextMenu, "Ban", s_ban, ban_click);
         }
 
         private void profile_Click(object sender, RoutedEventArgs e)
@@ -193,14 +198,14 @@ namespace TwitchChat
             Controller.Timeout(m_user, 1);
         }
 
-        private void AddMenuItem(string title, BitmapImage image, RoutedEventHandler handler)
+        private static void AddMenuItem(ContextMenu menu, string title, BitmapImage image, RoutedEventHandler handler)
         {
             MenuItem item = new MenuItem();
             item.Header = title;
             item.Click += handler;
             if (image != null)
                 item.Icon = GetImage(image);
-            ContextMenu.Items.Add(item);
+            menu.Items.Add(item);
         }
 
         void ChatLine_Initialized(object sender, EventArgs e)
@@ -330,35 +335,69 @@ namespace TwitchChat
             BuildText(msg);
         }
 
+        class FindResult
+        {
+            public Emoticon Emoticon { get; private set; }
+            public int Sort { get; private set; }
+            public string Url { get; private set; }
+            public int Offset { get; private set; }
+            public int Length { get; private set; }
+
+            public FindResult(EmoticonFindResult result)
+            {
+                Emoticon = result.Emoticon;
+                Offset = result.Offset;
+                Length = result.Length;
+                Sort = result.Emoticon.ImageSet.Id;
+            }
+
+            public FindResult(Match match)
+            {
+                Url = match.ToString();
+                Offset = match.Index;
+                Length = match.Length;
+                Sort = int.MinValue;
+            }
+        }
+
+        IEnumerable<FindResult> FindItems(ChatMessage msg)
+        {
+            var text = msg.Message;
+            var set = MainWindow.Emoticons;
+
+            if (set != null)
+                foreach (var emote in set.Find(text, m_user.ImageSet))
+                    yield return new FindResult(emote);
+
+            var urls = from Match match in s_url.Matches(text)
+                       let groups = match.Groups
+                       where s_urlExtensions.Contains(groups[groups.Count - 2].Value)
+                       select new FindResult(match);
+
+            foreach (var url in urls)
+                yield return url;
+        }
+
         private void BuildText(ChatMessage msg)
         {
             var text = msg.Message;
             var weight = (msg.Type == ItemType.Question) ? FontWeights.Bold : FontWeights.Normal;
             var color = (msg.Type == ItemType.Question) ? Brushes.Red : Brushes.Black;
 
-            var set = MainWindow.Emoticons;
-            if (set == null)   
-            {
-                var run = new Run(text) { Foreground = color, FontWeight = weight, BaselineAlignment = BaselineAlignment.Center };
-                m_messages.Add(run);
-                Inlines.Add(run);
-                return;
-            }
+            var items = from item in FindItems(msg)
+                        orderby item.Offset, item.Length descending, item.Sort
+                        select item;
 
             int curr = 0;
-            var emoticons = from item in set.Find(text, m_user.ImageSet)
-                            orderby item.Offset, item.Length descending, item.Emoticon.ImageSet.Id
-                            select item;
-
-            foreach (var item in emoticons)
+            foreach (var item in items)
             {
-                var emote = item.Emoticon;
                 var start = item.Offset;
                 var len = item.Length;
 
                 if (start < curr)
                     continue;
 
+                var emote = item.Emoticon;
                 Image img = GetImage(emote);
                 if (img != null)
                 {
@@ -373,6 +412,25 @@ namespace TwitchChat
                     cont.ToolTip = emote.Regex;
                     cont.BaselineAlignment = BaselineAlignment.Center;
                     Inlines.Add(cont);
+                }
+                else if (item.Url != null)
+                {
+                    var tmp = text.Slice(curr, start);
+                    if (curr < start)
+                    {
+                        var run2 = new Run(text.Slice(curr, start)) { Foreground = color, FontWeight = weight, BaselineAlignment = BaselineAlignment.Center };
+                        m_messages.Add(run2);
+                        Inlines.Add(run2);
+                    }
+
+                    var url = text.Slice(start, start + len);
+                    var run = new Run(url) { Foreground = Brushes.Blue, TextDecorations = System.Windows.TextDecorations.Underline, FontWeight = weight, BaselineAlignment = BaselineAlignment.Center };
+                    run.MouseEnter += (s, o) => { System.Windows.Input.Mouse.OverrideCursor = System.Windows.Input.Cursors.Hand; };
+                    run.MouseLeave += (s, o) => { System.Windows.Input.Mouse.OverrideCursor = System.Windows.Input.Cursors.Arrow; };
+                    run.MouseRightButtonDown += RightClickLink;
+                    run.MouseLeftButtonDown += LeftClickLink;
+                    m_messages.Add(run);
+                    Inlines.Add(run);
                 }
                 else
                 {
@@ -392,8 +450,42 @@ namespace TwitchChat
             }
         }
 
+        private void RightClickLink(object sender, System.Windows.Input.MouseButtonEventArgs e)
+        {
+            var run = (Run)sender;
+            if (run.ContextMenu == null)
+            {
+                var url = GetUrl(run);
+                ContextMenu menu = new ContextMenu();
+
+                AddMenuItem(menu, "Open", null, (s, o) => Process.Start(url));
+                AddMenuItem(menu, "Copy", null, (s, o) => Clipboard.SetText(url));
+
+                run.ContextMenu = menu;
+            }
+        }
+
+        private static string GetUrl(Run run)
+        {
+            var url = run.Text;
+            if (!url.StartsWith("http:", StringComparison.OrdinalIgnoreCase) && !url.StartsWith("https:", StringComparison.OrdinalIgnoreCase))
+                return "http://" + url;
+
+            return url;
+        }
+
+        private void LeftClickLink(object sender, System.Windows.Input.MouseButtonEventArgs e)
+        {
+            var run = (Run)sender;
+            var url = GetUrl(run);
+            Process.Start(url);
+        }
+
         private static Image GetImage(Emoticon emote)
         {
+            if (emote == null)
+                return null;
+
             BitmapImage src;
             if (!s_emotes.TryGetValue(emote, out src))
             {
