@@ -20,6 +20,7 @@ namespace TwitchChat
     /// </summary>
     public partial class PurgeWindow : Window, INotifyPropertyChanged
     {
+        bool m_onTop;
         bool m_ban, m_oneTime = true;
         string m_text, m_durationText;
 
@@ -129,6 +130,37 @@ namespace TwitchChat
                     OnPropertyChanged("OneTime");
                 }
             }
+        }
+
+        public bool OnTop
+        {
+            get
+            {
+                return m_onTop;
+            }
+            set
+            {
+                if (m_onTop != value)
+                {
+                    m_onTop = value;
+
+                    if (value)
+                    {
+                        this.Topmost = true;
+                        this.Deactivated += Window_Deactivated;
+                    }
+                    else
+                    {
+                        this.Topmost = false;
+                        this.Deactivated -= Window_Deactivated;
+                    }
+                }
+            }
+        }
+
+        void Window_Deactivated(object sender, EventArgs e)
+        {
+            this.Topmost = true;
         }
     }
 }

@@ -702,45 +702,62 @@ namespace TwitchChat
 
         internal void ShowPurgeDialog(string text, int duration)
         {
-            var win = new PurgeWindow(this, text, duration);
-            bool result = win.ShowDialog() ?? false;
+            var topmost = OnTop;
 
-            if (!result)
-                return;
+            try
+            {
+                if (topmost)
+                    OnTop = false;
 
-            text = win.Text;
+                var win = new PurgeWindow(this, text, duration);
+                win.OnTop = topmost;
 
-            if (!int.TryParse(win.DurationText, out duration) || duration < 1)
-                duration = 1;
+                bool result = win.ShowDialog() ?? false;
+                if (!result)
+                    return;
 
-            if (string.IsNullOrWhiteSpace(text))
-                return;
+                text = win.Text;
 
-            var channel = m_channel;
-            var users = (from item in Messages
-                         where channel == item.Channel && item.User != null && !item.User.IsModerator
-                         let msg = item as ChatMessage
-                         where msg != null && msg.Message.IsWildcardMatch(text)
-                         group msg by msg.User into g
-                         select g.Key).ToArray();
+                if (!int.TryParse(win.DurationText, out duration) || duration < 1)
+                    duration = 1;
 
-            if (users.Length == 0)
-                return;
+                if (string.IsNullOrWhiteSpace(text))
+                    return;
 
-            var choice = MessageBoxResult.Yes;
-            if (win.Ban && ConfirmBans)
-                choice = MessageBox.Show("Are you sure you want to ban the following users?\n" + string.Join("\n", users.Select(p=>p.Name)), "Ban Users", MessageBoxButton.YesNo);
-            else if (duration > 1 && ConfirmTimeouts)
-                choice = MessageBox.Show(string.Format("Are you sure you want to give a {0} second timeout to the following users?\n{1}", duration, string.Join("\n", users.Select(p=>p.Name))), "Timeout Users", MessageBoxButton.YesNo);
+                var channel = m_channel;
+                var users = (from item in Messages
+                             where channel == item.Channel && item.User != null && !item.User.IsModerator
+                             let msg = item as ChatMessage
+                             where msg != null && msg.Message.IsWildcardMatch(text)
+                             group msg by msg.User into g
+                             select g.Key).ToArray();
 
-            if (choice != MessageBoxResult.Yes)
-                return;
+                if (users.Length == 0)
+                {
+                    AddItem(new StatusMessage(null, this, string.Format("No match for '{0}' in recent non-moderator messages.", text)));
+                    return;
+                }
 
-            Debug.Assert(duration != -1);
-            if (win.Ban)
-                duration = -1;
+                var choice = MessageBoxResult.Yes;
+                if (win.Ban && ConfirmBans)
+                    choice = MessageBox.Show("Are you sure you want to ban the following users?\n" + string.Join("\n", users.Select(p => p.Name)), "Ban Users", MessageBoxButton.YesNo);
+                else if (duration > 1 && ConfirmTimeouts)
+                    choice = MessageBox.Show(string.Format("Are you sure you want to give a {0} second timeout to the following users?\n{1}", duration, string.Join("\n", users.Select(p => p.Name))), "Timeout Users", MessageBoxButton.YesNo);
 
-            TimeoutUserList(duration, channel, users);
+                if (choice != MessageBoxResult.Yes)
+                    return;
+
+                Debug.Assert(duration != -1);
+                if (win.Ban)
+                    duration = -1;
+
+                TimeoutUserList(duration, channel, users);
+            }
+            finally
+            {
+                if (topmost)
+                    OnTop = true;
+            }
         }
 
         private static async void TimeoutUserList(int duration, TwitchChannel channel, TwitchUser[] users)
