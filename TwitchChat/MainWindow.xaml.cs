@@ -266,14 +266,24 @@ namespace TwitchChat
             channel.SlowModeEnd += SlowModeEndHandler;
             channel.SubModeBegin += SubModeBeginHandler;
             channel.SubModeEnd += SubModeEndHandler;
+            channel.ModListReceived += ModListReceived;
             
+            return channel;
+        }
+
+        void ModListReceived(TwitchChannel channel, TwitchUser[] moderators)
+        {
+            Dispatcher.BeginInvoke(DispatcherPriority.Normal, new Action<TwitchChannel>(ModListReceivedWorker), channel);
+        }
+
+        private void ModListReceivedWorker(TwitchChannel channel)
+        {
             // Setting initial state, it's ok we haven't joined the channel yet.
             var currUser = CurrentUser = channel.GetUser(m_options.User);
             if (currUser.IsModerator)
                 ModJoined(channel, currUser);
             else
                 ModLeft(channel, currUser);
-            return channel;
         }
 
 
@@ -306,6 +316,7 @@ namespace TwitchChat
             channel.SlowModeEnd -= SlowModeEndHandler;
             channel.SubModeBegin -= SubModeBeginHandler;
             channel.SubModeEnd -= SubModeEndHandler;
+            channel.ModListReceived -= ModListReceived;
 
             return channel.Connection;
         }
